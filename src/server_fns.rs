@@ -136,3 +136,37 @@ pub async fn toggle_todo(id: i64) -> Result<(), ServerFnError> {
 
     Ok(())
 }
+
+#[server(ToggleAll, "/api")]
+pub async fn toggle_all(completed: bool) -> Result<(), ServerFnError> {
+    use leptos::context::use_context;
+    use sqlx::SqlitePool;
+
+    let pool = use_context::<SqlitePool>()
+        .ok_or_else(|| ServerFnError::new("Database pool not found"))?;
+
+    let completed_val: i64 = if completed { 1 } else { 0 };
+    sqlx::query("UPDATE todos SET completed = ?")
+        .bind(completed_val)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok(())
+}
+
+#[server(ClearCompleted, "/api")]
+pub async fn clear_completed() -> Result<(), ServerFnError> {
+    use leptos::context::use_context;
+    use sqlx::SqlitePool;
+
+    let pool = use_context::<SqlitePool>()
+        .ok_or_else(|| ServerFnError::new("Database pool not found"))?;
+
+    sqlx::query("DELETE FROM todos WHERE completed = 1")
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok(())
+}
