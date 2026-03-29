@@ -14,6 +14,18 @@ pub fn TodoItem(
     let (title, set_title) = signal(todo.title.clone());
     let edit_ref = NodeRef::<leptos::html::Input>::new();
 
+    // Focus input when entering edit mode
+    Effect::new(move |_| {
+        if editing.get() {
+            if let Some(input) = edit_ref.get() {
+                let _ = input.focus();
+                // Set cursor at end
+                let len = input.value().len() as u32;
+                let _ = input.set_selection_range(len, len);
+            }
+        }
+    });
+
     let on_toggle_click = move |_| {
         let new_completed = !completed.get();
         set_completed.set(new_completed);
@@ -42,16 +54,11 @@ pub fn TodoItem(
 
     let start_edit = move |_| {
         set_editing.set(true);
-        // Focus the edit input after render
-        leptos::task::spawn_local(async move {
-            if let Some(input) = edit_ref.get() {
-                let _ = input.focus();
-            }
-        });
     };
 
     let save_edit = move |new_title: String| {
         let trimmed = new_title.trim().to_string();
+        set_editing.set(false);
         if trimmed.is_empty() {
             // Empty title - delete the todo
             let on_delete = on_delete.clone();
@@ -63,16 +70,19 @@ pub fn TodoItem(
                 }
             });
         } else {
-            set_title.set(trimmed.clone());
-            set_editing.set(false);
-            let on_update = on_update.clone();
-            leptos::task::spawn_local(async move {
-                if let Err(e) = update_todo(todo_id, trimmed.clone()).await {
-                    tracing::error!("Failed to update todo: {}", e);
-                } else {
-                    on_update.run((todo_id, trimmed));
-                }
-            });
+            let old_title = title.get();
+            if trimmed != old_title {
+                set_title.set(trimmed.clone());
+                let on_update = on_update.clone();
+                leptos::task::spawn_local(async move {
+                    if let Err(e) = update_todo(todo_id, trimmed.clone()).await {
+                        tracing::error!("Failed to update todo: {}", e);
+                        set_title.set(old_title);
+                    } else {
+                        on_update.run((todo_id, trimmed));
+                    }
+                });
+            }
         }
     };
 
@@ -85,6 +95,10 @@ pub fn TodoItem(
                     save_edit(val);
                 }
             } else if ev.key() == "Escape" {
+                // Restore original title
+                if let Some(input) = edit_ref.get() {
+                    input.set_value(&title.get_untracked());
+                }
                 set_editing.set(false);
             }
         }
